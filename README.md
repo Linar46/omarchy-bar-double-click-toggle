@@ -90,4 +90,4 @@ The plugin makes no network requests, collects no data, and does not rewrite you
 
 ## License
 
-MIT. The bar engine is derived from Omarchy's MIT-licensed shell, copyright (c) David Heinemeier Hansson. See [LICENSE](LICENSE).
+MIT. The bar engine is derived from Omarchy's MIT-licensed shell, copyright (c) David Heinemeier Hansson. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
