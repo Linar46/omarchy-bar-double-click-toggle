@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "io.github.linar46.bar-double-click-toggle",
-  "name": "Bar Double-Click Toggle",
-  "version": "1.0.0",
+  "name": "Bar Auto-Hide",
+  "version": "1.1.0",
   "author": "Linar Sato",
   "license": "MIT",
-  "description": "Full Omarchy bar with the double-click background cycle behind an omarchy toggle flag. Stock layout, widgets, and drag gesture.",
+  "description": "Full Omarchy bar with Windows-style auto-hide configured from shell.json and an opt-in double-click background cycle.",
   "kinds": ["bar"],
   "entryPoints": {
     "bar": "Bar.qml"

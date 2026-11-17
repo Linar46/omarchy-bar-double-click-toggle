@@ -47,6 +47,22 @@ Item {
   // of the `bar-double-click-background` toggle flag, so it is off until the
   // user enables it with `omarchy toggle bar-double-click-background on`.
   property bool doubleClickCyclesBackground: false
+  // Windows-style auto-hide, configured under `bar:` in shell.json:
+  // `autohide` (default false), `autohideDelay` (ms after the pointer leaves
+  // before hiding, default 600), `autohideRevealDelay` (ms of hovering the
+  // edge before showing, default 120) and `autohidePeek` (px of the bar kept
+  // on screen as the invisible hover target, default 2). While auto-hidden the
+  // bar reserves no space and slides in over the windows when the pointer
+  // reaches its screen edge.
+  property bool autohide: false
+  property int autohideDelay: 600
+  property int autohideRevealDelay: 120
+  property int autohidePeek: 2
+  // Interactions that must keep a revealed bar on screen even after the
+  // pointer leaves it: an open panel, a visible tooltip, a widget drag or a
+  // bar move. This is the same rule the dock's auto-hide uses.
+  readonly property bool autohideHeld: activePopout !== null || tooltipShown
+    || barDragSource !== null || barMoveActive
   property string home: Quickshell.env("HOME")
   property string stateHome: home + "/.local/state"
   property string omarchyConfigDir: home + "/.config/omarchy"
@@ -789,6 +805,14 @@ Item {
     return BarModel.normalizePosition(value)
   }
 
+  // Reads one integer auto-hide option, clamped so a hand-edited shell.json
+  // cannot park the bar somewhere unreachable or animate for seconds.
+  function autoHideInt(value, fallback, minimum, maximum) {
+    var number = Number(value)
+    if (!isFinite(number)) return fallback
+    return Math.max(minimum, Math.min(maximum, Math.round(number)))
+  }
+
   // The shared layout normalization, so the bar host and scriptable config
   // helpers can't drift on entry shape.
   function normalizeLayout(layout) {
@@ -816,6 +840,12 @@ Item {
     // moves and whatever its settings, so a config write builds just the
     // widgets it adds (layoutWidgets).
     layoutConfig = normalizeLayout(config.layout)
+
+    autohide = config.autohide === true
+    autohideDelay = autoHideInt(config.autohideDelay, 600, 0, 5000)
+    autohideRevealDelay = autoHideInt(config.autohideRevealDelay, 120, 0, 5000)
+    autohidePeek = autoHideInt(config.autohidePeek, 2, 1, 12)
+
     barConfigSerial++
   }
 
@@ -1729,6 +1759,71 @@ Item {
   component BarPanel: PanelWindow {
     id: barWindow
 
+    // Auto-hide state is per monitor, so hovering one screen's bar does not
+    // pull the others out. While the pointer is away the bar waits off screen
+    // with only `autohidePeek` pixels left as an invisible trigger strip;
+    // touching that strip slides it back in, and it slides out again after
+    // `autohideDelay` once the pointer leaves. An open panel, tooltip or drag
+    // keeps it out. Manual `omarchy toggle bar` still parks the whole surface
+    // and wins over auto-hide.
+    property bool pointerInside: false
+    property bool revealed: !root.autohide
+    readonly property bool parked: root.autohide && !root.barHidden && !revealed && !root.autohideHeld
+    readonly property int autoParkOffset: root.barHidden
+      ? parkDistance
+      : (parked ? Math.max(0, thickness - root.autohidePeek) : 0)
+    // Parked by margin rather than unmapped, so revealing rebuilds no surface
+    // or glyph textures. A short slide in both directions makes the edge feel
+    // like the Windows taskbar.
+    property real animatedParkOffset: autoParkOffset
+    Behavior on animatedParkOffset {
+      NumberAnimation {
+        duration: Style.duration(barWindow.revealed ? 180 : 120)
+        easing.type: Easing.OutCubic
+      }
+    }
+
+    function updateAutohide() {
+      if (!root.autohide) {
+        revealTimer.stop()
+        concealTimer.stop()
+        revealed = true
+      } else if (root.barHidden) {
+        revealTimer.stop()
+        concealTimer.stop()
+        revealed = false
+      } else if (pointerInside || root.autohideHeld) {
+        concealTimer.stop()
+        if (!revealed && !revealTimer.running) revealTimer.restart()
+      } else {
+        revealTimer.stop()
+        if (revealed && !concealTimer.running) concealTimer.restart()
+      }
+    }
+
+    onPointerInsideChanged: updateAutohide()
+    Connections {
+      target: root
+      function onAutohideChanged() { barWindow.updateAutohide() }
+      function onAutohideHeldChanged() { barWindow.updateAutohide() }
+      function onBarHiddenChanged() {
+        if (root.barHidden) barWindow.pointerInside = false
+        barWindow.updateAutohide()
+      }
+    }
+
+    Timer {
+      id: revealTimer
+      interval: root.autohideRevealDelay
+      onTriggered: if (barWindow.pointerInside) barWindow.revealed = true
+    }
+
+    Timer {
+      id: concealTimer
+      interval: root.autohideDelay
+      onTriggered: if (!barWindow.pointerInside && !root.autohideHeld) barWindow.revealed = false
+    }
+
     // Hiding parks the bar just past its screen edge instead of unmapping it.
     // Unmapping frees the layer surface and the whole scene graph, so every
     // reveal has to rebuild them — new surface, re-shaped glyphs, re-uploaded
@@ -1741,9 +1836,11 @@ Item {
     // good: when the mode settles it, or after two seconds without one.
     visible: !remapGuard.remapping && (cutoutWaitOver || !cutoutPending)
     // An explicit zone instead of Auto: the reserved area stays the strip's
-    // thickness though the window spans its screen.
-    exclusionMode: root.barHidden ? ExclusionMode.Ignore : ExclusionMode.Normal
-    exclusiveZone: thickness
+    // thickness though the window spans its screen. Auto-hide reserves
+    // nothing, so windows use the full screen and the bar overlays them when
+    // it slides in, exactly like the dock.
+    exclusionMode: root.barHidden || root.autohide ? ExclusionMode.Ignore : ExclusionMode.Normal
+    exclusiveZone: root.barHidden || root.autohide ? 0 : thickness
 
     // While this window's widget or bar-move drag is live, the whole surface
     // takes input (mask below), so the pointer never leaves the bar surface
@@ -1767,10 +1864,10 @@ Item {
     // nor the clear rest that a drag takes input on.
     readonly property real parkDistance: root.vertical ? implicitWidth : implicitHeight
     margins {
-      top: root.barHidden && root.position === "top" ? -barWindow.parkDistance : 0
-      bottom: root.barHidden && root.position === "bottom" ? -barWindow.parkDistance : 0
-      left: root.barHidden && root.position === "left" ? -barWindow.parkDistance : 0
-      right: root.barHidden && root.position === "right" ? -barWindow.parkDistance : 0
+      top: root.position === "top" ? -Math.round(barWindow.animatedParkOffset) : 0
+      bottom: root.position === "bottom" ? -Math.round(barWindow.animatedParkOffset) : 0
+      left: root.position === "left" ? -Math.round(barWindow.animatedParkOffset) : 0
+      right: root.position === "right" ? -Math.round(barWindow.animatedParkOffset) : 0
     }
 
     anchors {
@@ -1787,7 +1884,10 @@ Item {
     readonly property bool cutoutPending: BarModel.cutoutPending(root.displayCutouts, root.position, screen.name, screen.width, screen.height, screen.devicePixelRatio, panelMode)
     property bool cutoutWaitOver: false
     onCutoutPendingChanged: if (!cutoutPending) cutoutWaitOver = true
-    Component.onCompleted: if (!cutoutPending) cutoutWaitOver = true
+    Component.onCompleted: {
+      updateAutohide()
+      if (!cutoutPending) cutoutWaitOver = true
+    }
 
     Timer {
       interval: 2000
@@ -1855,6 +1955,15 @@ Item {
       Rectangle {
         anchors.fill: parent
         color: root.transparent ? "transparent" : (root.glassy ? root.glassBackground : root.background)
+        // The parked strip is an invisible hover target, not a 2px line at
+        // the screen edge: Windows leaves no taskbar sliver behind either.
+        opacity: root.autohide && !root.barHidden && !barWindow.revealed ? 0 : 1
+        Behavior on opacity {
+          NumberAnimation {
+            duration: Style.duration(barWindow.revealed ? 180 : 120)
+            easing.type: Easing.OutCubic
+          }
+        }
       }
 
       Loader {
@@ -1867,9 +1976,13 @@ Item {
         HoverHandler {
           readonly property bool peeking: hovered && BarModel.peeksAt(point.position, barWindow.peekEdge, root.vertical)
           onPeekingChanged: root.setBarHovered(peeking)
+          onHoveredChanged: barWindow.pointerInside = hovered
           // Unplugging a monitor destroys its bar without a leave event, which
           // would strand this surface's tally and hold the peek open for good.
-          Component.onDestruction: if (peeking) root.setBarHovered(false)
+          Component.onDestruction: {
+            if (peeking) root.setBarHovered(false)
+            if (hovered) barWindow.pointerInside = false
+          }
         }
       }
     }
