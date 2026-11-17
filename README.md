@@ -1,8 +1,8 @@
-# Bar Auto-Hide
+# Bar Double-Click Toggle + Bar Auto-Hide
 
-An Omarchy full-bar plugin with Windows-style auto-hide and an opt-in double-left-click background cycle.
+An Omarchy full-bar plugin that makes the stock bar's double-left-click background cycle opt-in and adds Windows-style auto-hide.
 
-The bar slides away to its screen edge and returns when the pointer reaches that edge. The stock double-click background cycle is separately gated behind a toggle so it cannot fire by accident.
+The stock bar cycles its background from **opaque → glassy → clear** when you double-left-click empty center-bar space. This plugin keeps the stock bar, widgets, layout, and drag-to-move gesture, but ignores the gesture unless you enable it. The bar can also slide away to its screen edge and return when the pointer reaches that edge.
 
 ## Install
 

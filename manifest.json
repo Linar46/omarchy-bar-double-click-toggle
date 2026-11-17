@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "io.github.linar46.bar-double-click-toggle",
-  "name": "Bar Auto-Hide",
-  "version": "1.1.0",
+  "name": "Bar Double-Click Toggle + Bar Auto-Hide",
+  "version": "1.1.1",
   "author": "Linar Sato",
   "license": "MIT",
   "description": "Full Omarchy bar with Windows-style auto-hide configured from shell.json and an opt-in double-click background cycle.",
